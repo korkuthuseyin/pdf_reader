@@ -1,8 +1,8 @@
 import pdfplumber
-import nltk
+from transformers import pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
-from rake_nltk import Rake
-from nltk.corpus import stopwords
+import nltk
+from collections import Counter
 import re
 
 # Ensure NLTK resources are downloaded
@@ -10,7 +10,16 @@ nltk.download('punkt_tab')
 nltk.download('stopwords')
 nltk.download('punkt')
 
-# Function to extract main paragraphs from the PDF
+special_words = ["ben", "sen", "o", "biz", "siz", "onlar", "kendi", "bu", "şu", "ne", 
+    "ne kadar", "her", "hiç", "çok", "az", "bu kadar", "şimdi", "geçmiş", 
+    "şey", "kim", "ne", "için", "herkes", "gibi", "gerek", "ama", "de", 
+    "da", "çünkü", "ya", "ve", "veya", "ile", "ama", "fakat", "ya da", "şimdi", 
+    "geçmiş", "şunu", "bunu", "için", "gibi", "nasıl", "nerede",
+    "ve", "ile", "ama", "fakat", "ya", "ya da", "ne", "ne kadar", 
+    "her", "hiç", "şu", "bu", "diye", "çünkü", "için", "de", "da", 
+    "ama", "gerek", "olarak", "önce", "sonra", "kadar", "hem", "ya da", 
+    "üzerine", "gibi", "fakat", "ancak", "şimdi", "şöyle", "bu yüzden"]
+
 def extract_main_paragraphs(pdf_path):
     main_text = []
     with pdfplumber.open(pdf_path) as pdf:
@@ -31,78 +40,72 @@ def extract_main_paragraphs(pdf_path):
 
     return "\n".join(main_text)
 
-# Function to summarize text using TF-IDF (simple rule-based summarization)
-def simple_summary(text, num_sentences=5):
-    sentences = nltk.sent_tokenize(text)
-
-    # Vectorize the sentences
-    vectorizer = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = vectorizer.fit_transform(sentences)
-
-    # Sum up the TF-IDF scores for each sentence
-    sentence_scores = tfidf_matrix.sum(axis=1)
-
-    # Get the indices of the top N sentences
-    ranked_sentences = sentence_scores.argsort().flatten()[::-1]
-
-    # Select the top N sentences
-    summary = ' '.join([sentences[i] for i in ranked_sentences[:num_sentences]])
-
-    return summary
-
-# Function to extract keywords using TF-IDF
-def extract_keywords(text, num_keywords=5):
-    # Tokenize and clean the text
-    words = nltk.word_tokenize(text.lower())
-    words = [word for word in words if word.isalnum()]
+def summarize_text(text, max_chunk_length=512):
+    # Tokenize the text and split into manageable chunks of max_chunk_length tokens
+    summarizer = pipeline("summarization")
+    words = nltk.word_tokenize(text)
+    chunks = [words[i:i + max_chunk_length] for i in range(0, len(words), max_chunk_length)]
     
-    # Remove stop words (using Turkish stopwords if available)
-    stop_words = set(stopwords.words('english'))  # Change to 'turkish' for Turkish stopwords
+    summaries = []
+    for chunk in chunks:
+        # Join words back into a string and summarize
+        chunk_text = ' '.join(chunk)
+        try:
+            summary = summarizer(chunk_text, max_length=200, min_length=50, do_sample=False)
+            summaries.append(summary[0]['summary_text'])
+        except Exception as e:
+            print(f"Error summarizing chunk: {e}")
+            summaries.append("[Error during summarization]")
+    
+    # Combine the summaries into a final one
+    return " ".join(summaries)
+
+def extract_keywords(text, num_keywords=5, special_words=None):
+    # Tokenize and clean the text
+    words = nltk.word_tokenize(text.lower())  # Tokenizing the text
+    words = [word for word in words if word.isalnum()]  # Remove non-alphanumeric words
+    
+    # Remove stop words
+    stop_words = set(nltk.corpus.stopwords.words('english'))  # Set of stopwords in English
     filtered_words = [word for word in words if word not in stop_words]
     
+    # If special_words list is not provided, use an empty list
+    if special_words is None:
+        special_words = []
+
+    # Filter out the special words (those that should not be added)
+    filtered_words = [word for word in filtered_words if word not in special_words]
+
     # Using TF-IDF Vectorizer for keyword extraction
     vectorizer = TfidfVectorizer(stop_words='english', max_features=num_keywords)
-    tfidf_matrix = vectorizer.fit_transform([' '.join(filtered_words)])
+    tfidf_matrix = vectorizer.fit_transform([' '.join(filtered_words)])  # Fit the model to the filtered words
     
     # Get the feature names (keywords)
     keywords = vectorizer.get_feature_names_out()
     
     return keywords
 
-# Function to extract keywords using RAKE (Rapid Automatic Keyword Extraction)
-def extract_keywords_rake(text):
-    rake = Rake(stopwords=nltk.corpus.stopwords.words('english'))  # Change to 'turkish' if needed
-    rake.extract_keywords_from_text(text)
-    return rake.get_ranked_phrases()
 
-# Main function to run the process
-def main(pdf_file):
-    # Extract text from the PDF
-    paragraphs = extract_main_paragraphs(pdf_file)
-    
-    # Summarize the text using simple TF-IDF based summary
-    summary = simple_summary(paragraphs, num_sentences=5)
-    
-    # Extract keywords using TF-IDF
-    tfidf_keywords = extract_keywords(paragraphs, num_keywords=5)
-    
-    # Extract keywords using RAKE
-    rake_keywords = extract_keywords_rake(paragraphs)
-    
-    # Define the output text file path
-    output_text_file = "extracted_text.txt"
-    
-    # Save the extracted text, summary, and keywords to a text file
-    with open(output_text_file, "w", encoding="utf-8") as f:
-        f.write(f"Summary:\n{summary}\n\n")
-        f.write(f"TF-IDF Keywords: {', '.join(tfidf_keywords)}\n\n")
-        f.write(f"RAKE Keywords: {', '.join(rake_keywords)}\n\n")
-        f.write(f"Full Extracted Text:\n{paragraphs}")
-    
-    print(f"Text extracted, summarized, and saved to {output_text_file}")
 
 # Replace with your PDF file path
 pdf_file = "download.pdf"
 
-# Run the main process
-main(pdf_file)
+# Extract text
+paragraphs = extract_main_paragraphs(pdf_file)
+
+# Summarize the text
+summary = summarize_text(paragraphs)
+
+# Extract top 5 keywords
+keywords = extract_keywords(paragraphs, num_keywords=5, special_words=special_words)
+
+# Define the output text file path
+output_text_file = "extracted_text.txt"
+
+# Save the extracted text and summary to a text file
+with open(output_text_file, "w", encoding="utf-8") as f:
+    f.write(f"Summary:\n{summary}\n\n")
+    f.write(f"Keywords: {', '.join(keywords)}\n\n")
+    f.write(f"Full Extracted Text:\n{paragraphs}")
+
+print(f"Text extracted, summarized, and saved to {output_text_file}")
