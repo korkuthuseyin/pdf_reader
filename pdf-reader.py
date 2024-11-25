@@ -22,5 +22,15 @@ def extract_main_paragraphs(pdf_path):
 
 # Replace with your PDF file path
 pdf_file = "download.pdf"
+
+# Extract text
 paragraphs = extract_main_paragraphs(pdf_file)
-print(paragraphs)
+
+# Define the output text file path
+output_text_file = "extracted_text.txt"
+
+# Save the extracted text to a text file
+with open(output_text_file, "w", encoding="utf-8") as f:
+    f.write(paragraphs)
+
+print(f"Text extracted and saved to {output_text_file}")
