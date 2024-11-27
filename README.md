@@ -60,7 +60,7 @@ Install them with:
 pip install pdfplumber transformers scikit-learn nltk
 ```
 
-## Example o
+## Example Output
 
 After running the script, the `extracted_text.txt` file will contain the following sections:
 
